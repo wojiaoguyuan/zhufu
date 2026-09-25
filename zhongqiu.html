@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>中秋赛博点阵字特效 满屏版</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* 背景代码雨层 */
+        #bg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            filter: opacity(0.8); 
+        }
+
+        /* 前景像素文字层（CSS 铺满全屏） */
+        #fg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* 备用文字（防黑屏） */
+        #fallback-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 10rem;
+            font-weight: bold;
+            text-shadow: 0 0 20px #fff;
+            z-index: 3;
+            display: none;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="bg-canvas"></canvas>
+    <canvas id="fg-canvas"></canvas>
+    <div id="fallback-text">中秋快乐</div>
+
+    <script>
+        window.onload = function() {
+            
+            // ================= 配置区 =================
+            const phrases = [
+                { text: "中秋节快乐", hasHeart: false },
+                { text: "天天开心", hasHeart: true },
+                { text: "平安喜乐", hasHeart: true },
+                { text: "但愿人长久", hasHeart: true },
+                { text: "千里共婵娟", hasHeart: true }
+            ];
+            
+            const dotStep = 4;      // 像素间距，越小越密
+            const dotRadius = 2.0;  // 圆点大小
+
+            // ================= 初始化画布 =================
+            const bgCanvas = document.getElementById('bg-canvas');
+            const bgCtx = bgCanvas.getContext('2d');
+            const fgCanvas = document.getElementById('fg-canvas');
+            const fgCtx = fgCanvas.getContext('2d');
+
+            bgCanvas.width = window.innerWidth;
+            bgCanvas.height = window.innerHeight;
+
+            // ================= 1. 前景满屏像素文字渲染 =================
+            let currentPhraseIndex = 0;
+
+            function resizeAndRender() {
+                // 根据屏幕比例动态计算内部画布尺寸，防止变形和卡顿
+                const maxInternalWidth = 1280; 
+                const aspectRatio = window.innerWidth / window.innerHeight;
+                let fgWidth = Math.min(window.innerWidth, maxInternalWidth);
+                let fgHeight = fgWidth / aspectRatio;
+
+                fgCanvas.width = fgWidth;
+                fgCanvas.height = fgHeight;
+
+                renderCurrentPhrase();
+            }
+
+            function renderPixelText(text, showHeart) {
+                try {
+                    const offCanvas = document.createElement('canvas');
+                    const offCtx = offCanvas.getContext('2d');
+                    
+                    offCanvas.width = fgCanvas.width;
+                    offCanvas.height = fgCanvas.height;
+                    
+                    const fullText = showHeart ? `♥ ${text} ♥` : text;
+                    
+                    // === 核心：动态计算字号，让文字铺满屏幕 ===
+                    const maxTextWidth = offCanvas.width * 0.95; // 占屏幕宽度的 95%
+                    let testFontSize = 200;
+                    offCtx.font = `bold ${testFontSize}px "Courier New", Courier, monospace`;
+                    
+                    // 测量文字宽度
+                    const measuredWidth = offCtx.measureText(fullText).width;
+                    
+                    // 计算最终字号（按宽度缩放）
+                    let finalFontSize = (maxTextWidth / measuredWidth) * testFontSize;
+                    
+                    // 限制最大高度，防止文字上下溢出
+                    if (finalFontSize > offCanvas.height * 0.8) {
+                        finalFontSize = offCanvas.height * 0.8;
+                    }
+
+                    // 使用最终字号重新设置字体
+                    offCtx.font = `bold ${finalFontSize}px "Courier New", Courier, monospace`;
+                    offCtx.textAlign = 'center';
+                    offCtx.textBaseline = 'middle';
+                    offCtx.fillStyle = '#fff';
+                    offCtx.fillText(fullText, offCanvas.width / 2, offCanvas.height / 2);
+                    
+                    // 获取像素数据
+                    const imageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+                    const data = imageData.data;
+                    
+                    // 清空前景
+                    fgCtx.clearRect(0, 0, fgCanvas.width, fgCanvas.height);
+                    fgCtx.save();
+                    
+                    // 居中绘制
+                    fgCtx.translate(fgCanvas.width / 2, fgCanvas.height / 2);
+                    
+                    // 逐像素扫描生成点阵
+                    for (let y = 0; y < offCanvas.height; y += dotStep) {
+                        for (let x = 0; x < offCanvas.width; x += dotStep) {
+                            const index = (y * offCanvas.width + x) * 4;
+                            const alpha = data[index + 3];
+                            
+                            if (alpha > 128) {
+                                fgCtx.beginPath();
+                                const drawX = x - offCanvas.width / 2;
+                                const drawY = y - offCanvas.height / 2;
+                                fgCtx.arc(drawX, drawY, dotRadius, 0, Math.PI * 2);
+                                
+                                fgCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+                                fgCtx.shadowBlur = 6;
+                                fgCtx.shadowColor = 'white';
+                                fgCtx.fill();
+                            }
+                        }
+                    }
+                    fgCtx.restore();
+                    document.getElementById('fallback-text').style.display = 'none';
+                } catch (e) {
+                    console.error("Canvas 读取失败，启用备用文字:", e);
+                    document.getElementById('fallback-text').style.display = 'block';
+                    fgCanvas.style.display = 'none';
+                }
+            }
+
+            function renderCurrentPhrase() {
+                const current = phrases[currentPhraseIndex];
+                renderPixelText(current.text, current.hasHeart);
+                document.getElementById('fallback-text').innerText = current.text;
+            }
+
+            // 窗口大小改变时重新适配尺寸并渲染
+            window.addEventListener('resize', resizeAndRender);
+
+            // 轮播切换
+            setInterval(() => {
+                currentPhraseIndex = (currentPhraseIndex + 1) % phrases.length;
+                renderCurrentPhrase();
+            }, 3000);
+            
+            // 初始化渲染
+            resizeAndRender();
+
+
+            // ================= 2. 背景代码雨 =================
+            const chars = "明月几时有把酒问青天不知天上宫阙今夕是何年我欲乘风归去又恐琼楼玉宇高处不胜寒起舞弄清影何似在人间转朱阁低绮户照无眠不应有恨何事长向别时圆人有悲欢离合月有阴晴圆缺此事古难全但愿人长久千里共婵娟海上生明月天涯共此时情人怨遥夜竟夕起相思灭烛怜光满披衣觉露滋不堪盈手赠还寝梦佳期中秋快乐花好月圆人团圆平安喜乐";
+            const charArray = chars.split('');
+            const bgFontSize = 18; 
+            const columns = bgCanvas.width / bgFontSize;
+            const drops = [];
+
+            for (let i = 0; i < columns; i++) {
+                drops[i] = Math.floor(Math.random() * bgCanvas.height / bgFontSize);
+            }
+
+            function drawMatrix() {
+                bgCtx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+                bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+                bgCtx.font = 'bold ' + bgFontSize + 'px "Courier New", Courier, monospace';
+
+                for (let i = 0; i < drops.length; i++) {
+                    const text = charArray[Math.floor(Math.random() * charArray.length)];
+                    const opacity = Math.random() * 0.4 + 0.4; 
+                    bgCtx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                    
+                    bgCtx.fillText(text, i * bgFontSize, drops[i] * bgFontSize);
+
+                    if (drops[i] * bgFontSize > bgCanvas.height && Math.random() > 0.98) {
+                        drops[i] = 0;
+                    }
+                    drops[i]++;
+                }
+                requestAnimationFrame(drawMatrix);
+            }
+
+            window.addEventListener('resize', () => {
+                bgCanvas.width = window.innerWidth;
+                bgCanvas.height = window.innerHeight;
+            });
+
+            drawMatrix();
+        };
+    </script>
+</body>
+</html>
